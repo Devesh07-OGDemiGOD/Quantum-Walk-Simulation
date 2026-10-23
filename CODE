@@ -1,0 +1,240 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+from IPython.display import HTML, display
+
+
+
+N = int(input("Enter number of steps (e.g., 20): "))
+
+if N < 1:
+    raise ValueError("Number of steps must be at least 1.")
+
+NUM_WALKS = 50000
+rng = np.random.default_rng(42)
+
+positions = np.arange(-N, N + 1)
+size = len(positions)
+
+
+# Two coin states at every position
+state = np.zeros((2, size), dtype=complex)
+
+# Initial coin: balanced superposition with relative phase i
+state[0, N] = 1 / np.sqrt(2)
+state[1, N] = 1j / np.sqrt(2)
+
+# Hadamard coin operator
+H = np.array([
+    [1, 1],
+    [1, -1]
+], dtype=complex) / np.sqrt(2)
+
+# Store probability distribution after every step
+quantum_history = []
+quantum_variances = []
+quantum_means = []
+
+def get_probability(quantum_state):
+    return np.sum(np.abs(quantum_state) ** 2, axis=0)
+
+def analyze_distribution(probability):
+    mean = np.sum(positions * probability)
+    variance = np.sum((positions - mean) ** 2 * probability)
+    return mean, variance
+
+# Initial distribution at step zero
+probability = get_probability(state)
+quantum_history.append(probability.copy())
+mean, variance = analyze_distribution(probability)
+quantum_means.append(mean)
+quantum_variances.append(variance)
+
+# Apply coin and conditional shift repeatedly
+for step in range(N):
+
+    # Apply the Hadamard gate to the coin
+    state = H @ state
+
+    # Conditional position shift
+    new_state = np.zeros_like(state)
+
+    # Coin state |0>: move left
+    new_state[0, :-1] = state[0, 1:]
+
+    # Coin state |1>: move right
+    new_state[1, 1:] = state[1, :-1]
+
+    state = new_state
+
+    # Calculate probability and statistics
+    probability = get_probability(state)
+    quantum_history.append(probability.copy())
+
+    mean, variance = analyze_distribution(probability)
+    quantum_means.append(mean)
+    quantum_variances.append(variance)
+
+quantum_history = np.array(quantum_history)
+
+
+# Generate independent classical walks.
+# Each step moves left (-1) or right (+1).
+random_steps = rng.choice(
+    [-1, 1], size=(NUM_WALKS, N)
+)
+
+# Position of each walk after every step
+classical_paths = np.column_stack([
+    np.zeros(NUM_WALKS, dtype=int),
+    np.cumsum(random_steps, axis=1)
+])
+
+# Classical distribution and variance at every step
+classical_variances = np.var(classical_paths, axis=0)
+classical_means = np.mean(classical_paths, axis=0)
+
+# Estimated final-position probabilities
+final_positions = classical_paths[:, -1]
+classical_probability = (
+    np.bincount(final_positions + N, minlength=size)
+    / NUM_WALKS
+)
+
+quantum_probability = quantum_history[-1]
+
+
+
+print("\n========== SIMULATION RESULTS ==========")
+print("Number of steps:", N)
+print("Number of classical walks:", NUM_WALKS)
+print(f"Quantum total probability: {quantum_probability.sum():.8f}")
+print(f"Classical total probability: {classical_probability.sum():.8f}")
+
+print("\nStep-by-step variance:")
+print("Step | Quantum Variance | Classical Variance")
+
+for step in range(N + 1):
+    print(
+        f"{step:4d} | "
+        f"{quantum_variances[step]:16.4f} | "
+        f"{classical_variances[step]:18.4f}"
+    )
+
+print("\n========== FINAL ANALYSIS ==========")
+print(f"Quantum mean position: {quantum_means[-1]:.4f}")
+print(f"Classical mean position: {classical_means[-1]:.4f}")
+print(f"Quantum variance: {quantum_variances[-1]:.4f}")
+print(f"Classical variance: {classical_variances[-1]:.4f}")
+
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+axes[0].bar(positions, quantum_probability, width=0.8)
+axes[0].set_title("Quantum Walk: Final Distribution")
+axes[0].set_xlabel("Position")
+axes[0].set_ylabel("Probability")
+axes[0].grid(axis="y", alpha=0.3)
+
+axes[1].bar(positions, classical_probability, width=0.8)
+axes[1].set_title("Classical Walk: Final Distribution")
+axes[1].set_xlabel("Position")
+axes[1].set_ylabel("Estimated Probability")
+axes[1].grid(axis="y", alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+
+
+plt.figure(figsize=(11, 5))
+
+plt.plot(
+    positions, quantum_probability,
+    marker="o", markersize=3,
+    label="Quantum walk"
+)
+
+plt.plot(
+    positions, classical_probability,
+    marker=".", markersize=4,
+    label="Classical random walk"
+)
+
+plt.title("Quantum vs Classical Probability Distribution")
+plt.xlabel("Final Position")
+plt.ylabel("Probability")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+
+
+steps_range = np.arange(N + 1)
+
+plt.figure(figsize=(10, 5))
+
+plt.plot(
+    steps_range, quantum_variances,
+    marker="o", markersize=3,
+    label="Quantum walk"
+)
+
+plt.plot(
+    steps_range, classical_variances,
+    marker=".", markersize=4,
+    label="Classical random walk"
+)
+
+plt.title("Position Variance vs Number of Steps")
+plt.xlabel("Number of Steps")
+plt.ylabel("Position Variance")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+
+fig, ax = plt.subplots(figsize=(10, 5))
+
+bars = ax.bar(positions, quantum_history[0], width=0.8)
+
+ax.set_xlim(-N - 0.5, N + 0.5)
+ax.set_ylim(0, max(0.1, quantum_history.max() * 1.15))
+ax.set_xlabel("Particle Position")
+ax.set_ylabel("Probability")
+title = ax.set_title("Quantum Walk: Step 0")
+ax.grid(axis="y", alpha=0.3)
+
+def update(frame):
+    probability = quantum_history[frame]
+
+    for bar, value in zip(bars, probability):
+        bar.set_height(value)
+
+    title.set_text(f"Quantum Walk: Step {frame}")
+    return (*bars, title)
+
+animation = FuncAnimation(
+    fig,
+    update,
+    frames=N + 1,
+    interval=400,
+    blit=False
+)
+
+plt.close(fig)
+
+display(HTML(animation.to_jshtml()))
+
+
+print("\n========== PROJECT CONCLUSION ==========")
+print("1. The quantum walk evolves using probability amplitudes.")
+print("2. The Hadamard coin and conditional shift control its evolution.")
+print("3. Quantum interference changes the final probability distribution.")
+print("4. The classical walk uses random left/right movements.")
+print("5. Variance helps compare how the distributions spread.")
+
+print("\nNote: This is a mathematical simulation using NumPy.")
+print("It does not execute a quantum circuit on actual quantum hardware.")
